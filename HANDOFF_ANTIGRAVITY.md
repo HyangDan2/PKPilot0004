@@ -197,7 +197,7 @@ PKPilot0004/
 - `robots: noindex, nofollow` — 초안이므로 검색 노출을 막는다.
 - OG 이미지는 만들지 않았다(Phase 3 항목). 카카오톡 미리보기를 붙일 때는 1200×630 규격과 정식 로고를 쓴다.
 - `theme-color #FAFAFD`, PWA 매니페스트(`theme_color`·`background_color` 동일), 파비콘 6종으로 404 를 만들지 않는다.
-- 라이트/다크는 `../assets/hd2-theme.css`·`hd2-theme.js` 공용 토글과 `localStorage['hd2-theme']` FOUC 스니펫으로 처리한다(Web-HQ·PKPilot0001~0006과 동일).
+- 라이트/다크는 `./assets/hd2-theme.css`·`./assets/hd2-theme.js` 공용 토글과 `localStorage['hd2-theme']` FOUC 스니펫으로 처리한다(Web-HQ·PKPilot0001~0006과 동일).
 
 ### 3.2 두 가지 모드
 
