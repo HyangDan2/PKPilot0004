@@ -30,7 +30,22 @@ API 주소는 `localStorage` 에만 저장되고 서버로 전송되지 않습�
 | `manifest.json`, `favicon.*`, `icon-*.png` | PWA·아이콘 세트(404 방지) |
 | `backend/` | FastAPI 초안(무료 API 파이프라인 + pytest 61개) |
 
-## 로컬 실행
+## API
+
+백엔드(`backend/`)의 계약은 **[API 명세 (docs/API.md)](docs/API.md)** 에 정리되어 있다. 인수인계 문서
+[HANDOFF_ANTIGRAVITY.md](HANDOFF_ANTIGRAVITY.md) §5.1의 표를 저장소 정본 위치로 승격하고 요청·응답 스키마를 보강한 문서다.
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/health` | 서비스·커넥터 상태, 도메인 정합성, CORS 출처 |
+| GET | `/api/factors` | 4축·10요인·메커니즘·투자자 원칙 |
+| GET | `/api/symbols` | 예시 종목 10개 |
+| GET | `/api/analyze?q=<종목명\|코드\|티커>` | 종목 분석(NFDS·MR·신호·데이터 갭) |
+| GET | `/api/analyze/{ticker}` | 같은 분석(경로 버전) |
+| GET | `/api` | 서비스 요약·엔드포인트 목록 |
+
+- 인증 없음(전부 공개 읽기 GET). CORS는 `MI_CORS_ORIGINS` 허용 목록만
+- 오류: `400 query_required`, `404 unknown_symbol`, `500 internal_error`
 
 ```sh
 # 프런트(정적)
