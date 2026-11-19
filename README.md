@@ -1,86 +1,91 @@
 # Market Intelligence — PKPilot0004
 
-「기업 본질 가치와 무관한 경제 외적 주가 변동 요인 10선」을 **무료 공개 데이터만으로** 태깅하는 HD2Lab 대시보드입니다.
-단기 과열(Non-Fundamental Drift Score)과 평균 회귀 리스크를 **다른 점수**로 분리해 보여주고,
-어떤 데이터가 실데이터가 아닌지(표본) 화면에 그대로 표시합니다.
+An HD2Lab dashboard that tags the “ten non-fundamental drivers of share-price movement” using **free public
+data only**. It keeps short-term overheating (Non-Fundamental Drift Score) and mean-reversion risk as **two
+separate scores**, and states on screen which numbers are not live data (sample).
 
-- 라이브(머지 후): `https://hyangdan2.github.io/PKPilot0004/`
-- 상태: **초안(DRAFT)** · 검토용 PR · `noindex`
-- 인수인계 명세: [HANDOFF_ANTIGRAVITY.md](HANDOFF_ANTIGRAVITY.md)
-- 백엔드 초안: [`backend/`](backend/) → Server-HQ 이식 대상
+- Live: `https://hyangdan2.github.io/PKPilot0004/`
+- Status: **draft (DRAFT v0.1)** · live static front end on GitHub Pages · `noindex`
+- Handover spec: [HANDOFF_ANTIGRAVITY.md](HANDOFF_ANTIGRAVITY.md)
+- Backend draft: [`backend/`](backend/) → Server-HQ porting target
 
-## 두 가지 모드
+## Two modes
 
-| 모드 | 조건 | 데이터 | 점수 계산 | 네트워크 |
+| Mode | Condition | Data | Scoring | Network |
 | --- | --- | --- | --- | --- |
-| **정적 데모**(기본) | 그대로 열면 됨 | 내장 표본 4종목(삼성전자·SK하이닉스·에코프로·NAVER) | 브라우저 | 0회 |
-| **API 모드** | 헤더 `API 연결` → Base URL | 서버 응답 | 서버 | `/api/analyze` 등 |
+| **Static demo** (default) | open it as-is | built-in sample of four stocks (Samsung Electronics, SK hynix, Ecopro, NAVER) | in the browser | none |
+| **API mode** | header `API connection` → base URL | the server's response | on the server | `/api/analyze` and friends |
 
-데모는 `2026-11-13 15:30 KST` 기준 시각을 고정해 **언제 열어도 같은 결과**가 나오며,
-백엔드와 같은 스코어링 규칙을 씁니다(4종목 NFDS·MR·신호 수 일치 확인).
-API 주소는 `localStorage` 에만 저장되고 서버로 전송되지 않습니다.
+The demo pins its clock to `2026-11-13 15:30 KST` so it returns the **same result whenever you open it**, and it
+uses the same scoring rules as the backend (all four stocks match on NFDS, MR and signal count). The API address
+is stored only in `localStorage` and is never sent anywhere else. The response's own `mode` (`live`, `mixed` or
+`sample`) drives the mode pill and the “sample data included” badges, so a partly sampled answer says so.
 
-## 구성
+## Layout
 
-| 파일 | 내용 |
+| File | Contents |
 | --- | --- |
-| `index.html` | 헤더(Web-HQ 락업) · 히어로 · 메커니즘 도해 · 종목 분석기 · 10선 분류표 · 투자자 원칙 · API 설정 시트 |
-| `style.css` | Soft Iris 라이트(#FAFAFD / #FFFFFF / #8B6CE8) + Navy & Lavender 다크(#0B1020 / #12192E / #A78BFA) 토큰, 320~1440px 반응형, 의존성 0 (`./assets/hd2-theme.*` 토글) |
-| `app.js` | 도메인 문구 · 표본 데이터 · 데모 스코어링 엔진 · API 클라이언트 · 렌더러 (외부 문자열은 `textContent` 만 사용) |
-| `manifest.json`, `favicon.*`, `icon-*.png` | PWA·아이콘 세트(404 방지) |
-| `backend/` | FastAPI 초안(무료 API 파이프라인 + pytest 61개) |
+| `index.html` | header (Web-HQ lockup) · hero · mechanism diagram · stock analyser · ten-driver table · investor principles · API settings sheet |
+| `style.css` | Soft Iris light (`#FAFAFD` / `#FFFFFF` / `#8B6CE8`) + Navy & Lavender dark (`#0B1020` / `#12192E` / `#A78BFA`) tokens, responsive from 320 to 1440px, zero dependencies (`./assets/hd2-theme.*` toggle) |
+| `app.js` | domain copy · sample data · demo scoring engine · API client · renderers (external strings go through `textContent` only) |
+| `manifest.json`, `favicon.*`, `icon-*.png` | PWA and icon set (kept to avoid 404s) |
+| `assets/hd2-theme.*` | shared theme tokens and the 44px floating light/dark toggle |
+| `backend/` | FastAPI draft (free-API pipeline + 61 pytest cases) |
 
 ## API
 
-백엔드(`backend/`)의 계약은 **[API 명세 (docs/API.md)](docs/API.md)** 에 정리되어 있다. 인수인계 문서
-[HANDOFF_ANTIGRAVITY.md](HANDOFF_ANTIGRAVITY.md) §5.1의 표를 저장소 정본 위치로 승격하고 요청·응답 스키마를 보강한 문서다.
+The backend contract in `backend/` lives in **[API reference (docs/API.md)](docs/API.md)**. It promotes the
+table in §5.1 of the handover document [HANDOFF_ANTIGRAVITY.md](HANDOFF_ANTIGRAVITY.md) to the canonical place
+in the repository and adds request and response schemas.
 
-| Method | Path | 설명 |
+| Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/health` | 서비스·커넥터 상태, 도메인 정합성, CORS 출처 |
-| GET | `/api/factors` | 4축·10요인·메커니즘·투자자 원칙 |
-| GET | `/api/symbols` | 예시 종목 10개 |
-| GET | `/api/analyze?q=<종목명\|코드\|티커>` | 종목 분석(NFDS·MR·신호·데이터 갭) |
-| GET | `/api/analyze/{ticker}` | 같은 분석(경로 버전) |
-| GET | `/api` | 서비스 요약·엔드포인트 목록 |
+| GET | `/api/health` | service and connector status, domain consistency, CORS origins |
+| GET | `/api/factors` | four axes · ten drivers · mechanism · investor principles |
+| GET | `/api/symbols` | ten example stocks |
+| GET | `/api/analyze?q=<name\|code\|ticker>` | one stock's analysis (NFDS, MR, signals, data gaps) |
+| GET | `/api/analyze/{ticker}` | the same analysis (path version) |
+| GET | `/api` | service summary and endpoint list |
 
-- 인증 없음(전부 공개 읽기 GET). CORS는 `MI_CORS_ORIGINS` 허용 목록만
-- 오류: `400 query_required`, `404 unknown_symbol`, `500 internal_error`
+- No authentication (everything is a public read `GET`). CORS allows only the `MI_CORS_ORIGINS` list.
+- Errors: `400 query_required`, `404 unknown_symbol`, `500 internal_error`
 
 ```sh
-# 프런트(정적)
+# front end (static)
 python3 -m http.server 8804 --bind 127.0.0.1
 # → http://127.0.0.1:8804/
 
-# 백엔드(표본 모드)
+# backend (sample mode)
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 MI_OFFLINE=1 .venv/bin/python -m uvicorn market_intel.app:create_app --factory --host 127.0.0.1 --port 8791
 
-# 프런트 → 백엔드 연결 확인 (정적 서버 출처를 CORS 에 허용)
+# front end → backend (allow the static origin in CORS)
 MI_CORS_ORIGINS="http://127.0.0.1:8804,http://127.0.0.1:8791" \
   .venv/bin/python -m uvicorn market_intel.app:create_app --factory --host 127.0.0.1 --port 8791
 # → http://127.0.0.1:8804/?api=http://127.0.0.1:8791
 ```
 
-`?api=` 는 그 세션에서만 쓰는 주소입니다. 상단 `API 연결` 로 저장하면 다음 방문부터 자동 연결합니다.
+`?api=` is used for that session only. Saving it with `API connection` in the header connects automatically from
+the next visit.
 
-## 검증
+## Verification
 
-| 항목 | 결과 |
+| Item | Result |
 | --- | --- |
-| 백엔드 테스트 | **61 passed** (`pytest`, 네트워크 미사용) |
-| 데모 ↔ 백엔드 동등성 | 4종목 NFDS·MR·신호·축 점수 일치 |
-| 화면(1440 / 390 / 320) | 가로 넘침 0, 콘솔 오류 0 |
-| API 모드 실측 | 실제 무료 소스로 `mode: mixed`, NFDS 34.3(005930) |
+| Backend tests | **61 passed** (`pytest`, no network) |
+| Demo ↔ backend parity | four stocks identical on NFDS, MR, signals and axis scores |
+| Screen (1440 / 390 / 320) | no horizontal overflow, no console errors |
+| API mode measured live | real free sources → `mode: mixed`, NFDS 34.3 (005930) |
 
-자세한 수치와 재현 방법은 [HANDOFF_ANTIGRAVITY.md](HANDOFF_ANTIGRAVITY.md) 3.3~3.5절에 있습니다.
+The numbers and the way to reproduce them are in §3.3–3.5 of [HANDOFF_ANTIGRAVITY.md](HANDOFF_ANTIGRAVITY.md).
 
-## 알려진 한계
+## Known limits
 
-- 데모 표본은 4종목이며 실시간이 아닙니다(기준 시각 고정).
-- 해외 종목은 Yahoo 호출 제한(429) + 한국어 키워드 사전 미적용으로 신호가 비어 있을 수 있습니다.
-- 공매도 잔고는 무료 실시간 소스가 없어 수급 역전으로 대체 추정합니다.
-- 점수 계수는 백테스트 전 가설값입니다.
+- The demo sample holds four stocks and is not live (its clock is fixed).
+- Overseas tickers can come back with empty signals because of Yahoo rate limits (429) and the missing Korean
+  keyword dictionary.
+- Short-selling balance has no free real-time source, so it is estimated from a supply/demand reversal instead.
+- The score coefficients are pre-backtest hypotheses.
 
-투자 자문이 아니며 모든 응답에 면책 문구가 포함됩니다.
+This is not investment advice, and every response carries a disclaimer.
