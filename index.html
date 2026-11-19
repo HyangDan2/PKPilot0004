@@ -24,9 +24,9 @@
 
   <!-- HD2Lab shared theme: applies the stored hd2-theme before first paint (no flash) -->
   <script>try{var h=localStorage.getItem('hd2-theme');document.documentElement.setAttribute('data-theme',h==='dark'?'dark':'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}</script>
-  <link rel="stylesheet" href="./assets/hd2-theme.css?v=20261117-navy" />
-  <script src="./assets/hd2-theme.js?v=20261117-navy" defer></script>
-  <link rel="stylesheet" href="style.css?v=20261117-navy" />
+  <link rel="stylesheet" href="./assets/hd2-theme.css?v=20261119-poc" />
+  <script src="./assets/hd2-theme.js?v=20261119-poc" defer></script>
+  <link rel="stylesheet" href="style.css?v=20261119-poc" />
 </head>
 <body>
   <!-- ── 자체 제작 아이콘 ──────────────────────────────────────────────── -->
@@ -110,8 +110,22 @@
       </div>
 
       <form class="search" id="searchForm" autocomplete="off" role="search">
-        <label class="sr-only" for="queryInput">종목명 또는 티커</label>
-        <input id="queryInput" name="q" type="search" placeholder="예: 삼성전자, 005930, TSLA" spellcheck="false" enterkeyhint="search" />
+        <div class="search-box">
+          <label class="sr-only" for="queryInput">종목명 또는 티커</label>
+          <input
+            id="queryInput"
+            name="q"
+            type="search"
+            placeholder="예: 삼성전자, 005930, 기아, TSLA"
+            spellcheck="false"
+            enterkeyhint="search"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-controls="suggestList"
+          />
+          <div id="suggestList" class="suggest-list" role="listbox" aria-label="종목 추천 목록" hidden></div>
+        </div>
         <button type="submit" class="btn">분석</button>
       </form>
       <div class="chips" id="chips" aria-label="예시 종목"></div>
@@ -124,7 +138,14 @@
             <p class="result-kicker" id="entityMeta">—</p>
             <h3 id="entityName">—</h3>
           </div>
-          <div class="result-badges" id="entityBadges"></div>
+          <div class="result-right">
+            <div class="result-actions">
+              <span class="result-stamp" id="resultStamp">—</span>
+              <button type="button" class="btn-mini" id="refreshBtn" title="최신 시세·뉴스 다시 조회">새로고침</button>
+              <button type="button" class="btn-mini" id="autoRefreshBtn" aria-pressed="false" title="3분마다 자동 갱신">자동갱신 OFF</button>
+            </div>
+            <div class="result-badges" id="entityBadges"></div>
+          </div>
         </div>
 
         <div class="quote-grid" id="quoteGrid"></div>
@@ -276,6 +297,6 @@
     </form>
   </dialog>
 
-  <script src="app.js?v=20261117-navy"></script>
+  <script src="app.js?v=20261119-poc"></script>
 </body>
 </html>

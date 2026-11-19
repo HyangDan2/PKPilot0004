@@ -18,6 +18,8 @@
   var BRIEF_TITLE = "기업 본질 가치와 무관한 경제 외적 주가 변동 요인 10선";
   var DEMO_AS_OF = "2026-11-13T15:30:00+09:00";
   var STORE_KEY = "hd2lab.mi.apiBase";
+  var DEMO_PREF_KEY = "hd2lab.mi.explicitDemo";
+  var DEFAULT_SERVER_API = "https://hd2lab.duckdns.org/market-intel";
   var CORE_CONCLUSION =
     "경제 외적 요인은 단기 주가에 강력한 모멘텀과 변동성을 제공하지만, " +
     "기업의 본질적 이익 창출 능력이 뒷받침되지 않을 경우 이벤트 종료와 함께 " +
@@ -812,6 +814,26 @@
       else window.localStorage.removeItem(STORE_KEY);
     } catch (error) { /* 사파리 프라이빗 모드: 저장 실패는 세션 한정으로 동작 */ }
   }
+  function isExplicitDemo() {
+    try { return window.localStorage.getItem(DEMO_PREF_KEY) === "1"; } catch (error) { return false; }
+  }
+  function setExplicitDemo(flag) {
+    try {
+      if (flag) window.localStorage.setItem(DEMO_PREF_KEY, "1");
+      else window.localStorage.removeItem(DEMO_PREF_KEY);
+    } catch (error) { /* noop */ }
+  }
+  function detectSameOriginBase() {
+    var host = String(window.location.hostname || "").toLowerCase();
+    var path = String(window.location.pathname || "");
+    if (host === "hd2lab.duckdns.org" && /^\/market-intel(\/|$)/.test(path)) {
+      return window.location.origin + "/market-intel";
+    }
+    if ((host === "127.0.0.1" || host === "localhost") && window.location.port === "8791") {
+      return window.location.origin;
+    }
+    return "";
+  }
   function normalizeBase(raw) {
     var text = String(raw || "").trim();
     if (!text) return "";
@@ -841,8 +863,10 @@
     });
   }
 
-  function apiAnalyze(query) {
-    return getJSON("/api/analyze?q=" + encodeURIComponent(query), 15000).then(function (res) {
+  function apiAnalyze(query, opts) {
+    var path = "/api/analyze?q=" + encodeURIComponent(query);
+    if (opts && opts.refresh) path += "&refresh=1";
+    return getJSON(path, 15000).then(function (res) {
       if (!res.ok) {
         var message = (res.body && res.body.message) || "분석에 실패했습니다.";
         if (res.body && res.body.suggestions && res.body.suggestions.length) {
@@ -854,8 +878,33 @@
     });
   }
 
+  function localSuggest(query) {
+    var q = String(query || "").trim().toLowerCase().replace(/\s+/g, "");
+    var list = EXAMPLES.slice();
+    if (!q) return { q: "", mode: "examples", items: list };
+    var hits = list.filter(function (item) {
+      return item.name.toLowerCase().replace(/\s+/g, "").indexOf(q) >= 0 ||
+        item.ticker.toLowerCase().indexOf(q) >= 0;
+    });
+    return { q: query, mode: "demo", items: hits };
+  }
+
+  function apiSuggest(query) {
+    if (!state.apiBase) return Promise.resolve(localSuggest(query));
+    return getJSON("/api/suggest?q=" + encodeURIComponent(query) + "&limit=8", 5000).then(function (res) {
+      if (res.ok && res.body && Array.isArray(res.body.items)) return res.body;
+      return localSuggest(query);
+    }).catch(function () {
+      return localSuggest(query);
+    });
+  }
+
   /* ── 렌더 ───────────────────────────────────────────────────────────── */
-  var state = { apiBase: "", mode: "demo", busy: false, factors: null };
+  var state = {
+    apiBase: "", mode: "demo", busy: false, factors: null,
+    lastQuery: "005930", autoRefresh: false, autoTimer: null,
+    suggestItems: [], suggestIndex: -1, suggestSeq: 0, suggestTimer: null
+  };
 
   function setMode(mode, note) {
     var pill = $("modePill");
@@ -1175,6 +1224,10 @@
     if (body.mode !== "live" && body.sample_as_of) meta.push("표본 기준 " + formatStamp(body.sample_as_of));
     $("entityMeta").textContent = meta.join(" · ");
     $("entityName").textContent = body.entity.name || body.q;
+    if ($("resultStamp")) {
+      $("resultStamp").textContent = body.generated_at ? ("기준 " + formatStamp(body.generated_at)) : "—";
+    }
+    state.lastQuery = (body.entity && body.entity.ticker) || body.q || state.lastQuery;
 
     var badges = $("entityBadges");
     clear(badges);
@@ -1208,18 +1261,115 @@
     return map.year + "-" + map.month + "-" + map.day + " " + map.hour + ":" + map.minute;
   }
 
+  /* ── 추천 드롭다운 ──────────────────────────────────────────────────── */
+  function closeSuggest() {
+    var list = $("suggestList");
+    var input = $("queryInput");
+    if (list) list.hidden = true;
+    if (input) input.setAttribute("aria-expanded", "false");
+    state.suggestIndex = -1;
+  }
+
+  function highlightSuggest(nextIndex) {
+    var list = $("suggestList");
+    if (!list || !state.suggestItems.length) return;
+    var count = state.suggestItems.length;
+    var idx = ((nextIndex % count) + count) % count;
+    state.suggestIndex = idx;
+    var buttons = list.querySelectorAll(".suggest-item");
+    for (var i = 0; i < buttons.length; i += 1) {
+      var active = i === idx;
+      buttons[i].classList.toggle("active", active);
+      buttons[i].setAttribute("aria-selected", active ? "true" : "false");
+      if (active && typeof buttons[i].scrollIntoView === "function") {
+        buttons[i].scrollIntoView({ block: "nearest" });
+      }
+    }
+  }
+
+  function selectSuggest(item) {
+    if (!item) return;
+    closeSuggest();
+    $("queryInput").value = item.name ? (item.name + " (" + item.ticker + ")") : item.ticker;
+    analyze(item.ticker);
+  }
+
+  function renderSuggest(payload) {
+    var list = $("suggestList");
+    var input = $("queryInput");
+    if (!list || !input) return;
+    clear(list);
+    var items = (payload && payload.items) || [];
+    state.suggestItems = items;
+    state.suggestIndex = -1;
+
+    if (!items.length) {
+      list.appendChild(el("div", "suggest-empty", "일치하는 추천 종목이 없습니다. 6자리 코드나 영문 티커를 직접 입력해 보세요."));
+      list.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      return;
+    }
+
+    items.forEach(function (item, idx) {
+      var btn = el("button", "suggest-item");
+      btn.type = "button";
+      btn.setAttribute("role", "option");
+      btn.setAttribute("aria-selected", "false");
+
+      var main = el("span", "suggest-main");
+      main.appendChild(el("span", "suggest-name", item.name || item.ticker));
+      main.appendChild(el("span", "suggest-ticker", item.ticker));
+      btn.appendChild(main);
+
+      if (item.market) {
+        btn.appendChild(el("span", "suggest-market", item.market));
+      }
+
+      btn.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+        selectSuggest(item);
+      });
+      btn.addEventListener("mouseenter", function () {
+        highlightSuggest(idx);
+      });
+      list.appendChild(btn);
+    });
+
+    var footLabel = payload.mode === "live"
+      ? "실시간 종목 추천 · 클릭 또는 ↑↓ Enter 선택"
+      : (payload.mode === "examples" ? "예시 종목 · 종목명 또는 코드를 입력하세요" : "내장 사전 추천 (오프라인/데모)");
+    list.appendChild(el("div", "suggest-foot", footLabel));
+    list.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+  }
+
+  function scheduleSuggest(raw) {
+    if (state.suggestTimer) window.clearTimeout(state.suggestTimer);
+    var text = String(raw || "").trim();
+    var seq = ++state.suggestSeq;
+    state.suggestTimer = window.setTimeout(function () {
+      apiSuggest(text).then(function (payload) {
+        if (seq !== state.suggestSeq) return;
+        renderSuggest(payload);
+      });
+    }, text ? 220 : 60);
+  }
+
   /* ── 분석 실행 ──────────────────────────────────────────────────────── */
-  function analyze(query) {
+  function analyze(query, opts) {
     var text = String(query || "").trim();
     if (!text || state.busy) return;
+    closeSuggest();
     state.busy = true;
     var button = document.querySelector("#searchForm .btn");
+    var refreshBtn = $("refreshBtn");
     if (button) button.disabled = true;
-    $("queryInput").value = text;
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (!opts || !opts.silentInput) $("queryInput").value = text;
     notify("", false);
 
     var task = state.apiBase
-      ? apiAnalyze(text).catch(function (error) {
+      ? apiAnalyze(text, opts).catch(function (error) {
         return { error: "network", message: "API 호출 실패: " + (error && error.name === "AbortError" ? "응답 시간 초과" : (error && error.message) || "알 수 없는 오류") + " — 정적 데모로 계산합니다.", fallback: true };
       })
       : Promise.resolve(demoAnalyze(text));
@@ -1235,14 +1385,38 @@
         return;
       }
       renderResult(result);
-      var target = $("result");
-      if (target.getBoundingClientRect().top < 0) target.scrollIntoView({ block: "start", behavior: "smooth" });
+      if (!opts || !opts.noScroll) {
+        var target = $("result");
+        if (target.getBoundingClientRect().top < 0) target.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
     }).catch(function (error) {
       notify("분석 중 오류: " + ((error && error.message) || "알 수 없는 오류"), true);
     }).then(function () {
       state.busy = false;
       if (button) button.disabled = false;
+      if (refreshBtn) refreshBtn.disabled = false;
     });
+  }
+
+  function setAutoRefresh(enabled) {
+    state.autoRefresh = !!enabled;
+    if (state.autoTimer) {
+      window.clearInterval(state.autoTimer);
+      state.autoTimer = null;
+    }
+    var btn = $("autoRefreshBtn");
+    if (btn) {
+      btn.classList.toggle("on", state.autoRefresh);
+      btn.setAttribute("aria-pressed", state.autoRefresh ? "true" : "false");
+      btn.textContent = state.autoRefresh ? "자동갱신 ON (3분)" : "자동갱신 OFF";
+    }
+    if (state.autoRefresh) {
+      state.autoTimer = window.setInterval(function () {
+        if (!document.hidden && state.apiBase && state.lastQuery && !state.busy) {
+          analyze(state.lastQuery, { refresh: true, noScroll: true, silentInput: true });
+        }
+      }, 180000);
+    }
   }
 
   /* ── 부팅 ───────────────────────────────────────────────────────────── */
@@ -1290,18 +1464,61 @@
 
     var params = new URLSearchParams(window.location.search);
     var queryBase = params.get("api");
-    var base = queryBase ? normalizeBase(queryBase) : storedBase();
-    applyBase(base);
+    var sameOriginBase = detectSameOriginBase();
+    var saved = storedBase();
+    var initialBase = queryBase ? normalizeBase(queryBase) : (sameOriginBase || saved);
+    applyBase(initialBase);
+
+    var input = $("queryInput");
+    input.addEventListener("input", function () {
+      scheduleSuggest(input.value);
+    });
+    input.addEventListener("focus", function () {
+      scheduleSuggest(input.value);
+    });
+    input.addEventListener("keydown", function (event) {
+      var list = $("suggestList");
+      if (!list || list.hidden) return;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        highlightSuggest(state.suggestIndex + 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        highlightSuggest(state.suggestIndex - 1);
+      } else if (event.key === "Escape") {
+        closeSuggest();
+      } else if (event.key === "Enter" && state.suggestIndex >= 0 && state.suggestItems[state.suggestIndex]) {
+        event.preventDefault();
+        selectSuggest(state.suggestItems[state.suggestIndex]);
+      }
+    });
+    document.addEventListener("click", function (event) {
+      var box = document.querySelector(".search-box");
+      if (box && !box.contains(event.target)) closeSuggest();
+    });
 
     $("searchForm").addEventListener("submit", function (event) {
       event.preventDefault();
-      var query = $("queryInput").value.trim();
+      var query = input.value.trim();
+      var m = query.match(/\(([A-Za-z0-9]{1,10})\)$/);
+      if (m) query = m[1];
       if (query) analyze(query);
     });
 
+    if ($("refreshBtn")) {
+      $("refreshBtn").addEventListener("click", function () {
+        if (state.lastQuery) analyze(state.lastQuery, { refresh: true, noScroll: true, silentInput: true });
+      });
+    }
+    if ($("autoRefreshBtn")) {
+      $("autoRefreshBtn").addEventListener("click", function () {
+        setAutoRefresh(!state.autoRefresh);
+      });
+    }
+
     var dialog = $("apiDialog");
     $("apiBtn").addEventListener("click", function () {
-      $("apiInput").value = state.apiBase;
+      $("apiInput").value = state.apiBase || DEFAULT_SERVER_API;
       if (typeof dialog.showModal === "function") dialog.showModal();
       else dialog.setAttribute("open", "");
     });
@@ -1310,7 +1527,9 @@
     });
     $("apiReset").addEventListener("click", function () {
       saveBase("");
+      setExplicitDemo(true);
       applyBase("");
+      setAutoRefresh(false);
       if (typeof dialog.close === "function") dialog.close(); else dialog.removeAttribute("open");
       setMode("sample");
       notify("정적 데모 모드로 돌아왔습니다. 내장 표본 데이터로 계산합니다.", false);
@@ -1336,6 +1555,7 @@
       getJSON("/api/health", 8000).then(function (res) {
         if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
         saveBase(candidate);
+        setExplicitDemo(false);
         applyBase(candidate);
         status.textContent = "연결됨: v" + res.body.version + " · " + res.body.mode + " · " + candidate;
         status.className = "sheet-status ok";
@@ -1350,8 +1570,26 @@
       });
     });
 
-    if (state.apiBase) loadFromApi();
-    else { setMode("sample"); analyze("005930"); }
+    if (state.apiBase) {
+      loadFromApi();
+    } else if (!isExplicitDemo()) {
+      state.apiBase = DEFAULT_SERVER_API;
+      getJSON("/api/health", 4000).then(function (res) {
+        if (res.ok && res.body) {
+          applyBase(DEFAULT_SERVER_API);
+          loadFromApi();
+        } else {
+          throw new Error("health failed");
+        }
+      }).catch(function () {
+        applyBase("");
+        setMode("sample");
+        analyze("005930");
+      });
+    } else {
+      setMode("sample");
+      analyze("005930");
+    }
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
